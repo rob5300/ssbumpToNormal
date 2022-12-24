@@ -70,9 +70,9 @@ fn ConvertImage(path: &String) -> Result<bool, ImageError> {
             //Convert pixel colour to a vector
             let pixel_vector = Vector3::new(pixel[0] as f32 / 255f32, pixel[1] as f32 / 255f32, pixel[2] as f32 / 255f32);
             //Convert normal vector back to traditional tangent normal
-            pixel[0] = (pixel_vector.dot(bumpBasisTranspose[0]) * 255f32) as u8;
-            pixel[1] = (pixel_vector.dot(bumpBasisTranspose[1]) * 255f32) as u8;
-            pixel[2] = (pixel_vector.dot(bumpBasisTranspose[2]) * 255f32) as u8;
+            pixel[0] = ConvertVector(&pixel_vector, 0);
+            pixel[1] = ConvertVector(&pixel_vector, 1);
+            pixel[2] = ConvertVector(&pixel_vector, 2);
         }
     }
 
@@ -87,4 +87,8 @@ fn ConvertImage(path: &String) -> Result<bool, ImageError> {
     println!("Wrote new file to '{}'.", newFilePath.to_str().unwrap());
 
     return Ok(true);
+}
+
+fn ConvertVector(pixel: &Vector3<f32>, index: usize) -> u8 {
+    return (((pixel.dot(bumpBasisTranspose[index]) * 0.5f32) + 0.5f32) * 255f32) as u8;
 }
