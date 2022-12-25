@@ -1,5 +1,5 @@
 use image::{io::Reader as ImageReader, ImageError};
-use std::{env, io, path::Path, ffi::OsStr};
+use std::{env, io::{self, ErrorKind}, path::Path, ffi::OsStr, error::Error};
 use cgmath::{Vector3, InnerSpace};
 
 //From source 2013: https://github.com/ValveSoftware/source-sdk-2013/blob/0d8dceea4310fde5706b3ce1c70609d72a38efdf/sp/src/materialsystem/stdshaders/common_fxc.h#L41
@@ -42,22 +42,20 @@ fn main() {
     for x in 1..args.len() {
         let arg = &args[x];
         match ConvertImage(&arg) {
-            Ok(result) => {
-                if result {
-                    println!("File {} converted successfully.", arg);
-                }
-                else {
-                    println!("File {} failed to convert.", arg);
-                }
-            }
-            Err(e) => println!("Img error for '{}': {}", arg, e)
+            Ok(()) => println!("File '{}' converted successfully.", arg),
+            Err(e) => println!("Image conversion error for '{}': {}", arg, e)
         }
     }
 
     println!("Done!");
 }
 
-fn ConvertImage(path: &String) -> Result<bool, ImageError> {
+fn path_error() -> io::Error
+{
+    io::Error::new(ErrorKind::Other, "Path of image was malformed or contained invalid characters")
+}
+
+fn ConvertImage(path: &String) -> Result<(), Box<dyn Error>> {
     let mut img = ImageReader::open(path)?.decode()?;
     let width = img.width();
     let height = img.height();
@@ -77,16 +75,15 @@ fn ConvertImage(path: &String) -> Result<bool, ImageError> {
     }
 
     let originalPath = Path::new(path);
-    //Add _normal into filename, hope there is a better way to do this
+    //Add _normal into filename
     let mut newFilePath = originalPath.to_owned();
-    let oldName = originalPath.file_stem().unwrap().to_str().unwrap();
-    let oldExt = originalPath.extension().unwrap().to_str().unwrap();
+    let oldName = originalPath.file_stem().ok_or_else(path_error)?.to_str().ok_or_else(path_error)?;
+    let oldExt = originalPath.extension().ok_or_else(path_error)?.to_str().ok_or_else(path_error)?;
     let newFileName = [oldName, "_normal.", oldExt].concat();
     newFilePath.set_file_name(OsStr::new(&newFileName));
-    img.save(&newFilePath);
-    println!("Wrote new file to '{}'.", newFilePath.to_str().unwrap());
-
-    return Ok(true);
+    img.save(&newFilePath)?;
+    println!("Wrote new file to '{}'.", newFilePath.to_str().ok_or_else(path_error)?);
+    Ok(())
 }
 
 fn ConvertVector(pixel: &Vector3<f32>, index: usize) -> u8 {
