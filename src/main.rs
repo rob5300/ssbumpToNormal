@@ -1,10 +1,10 @@
-use image::{io::Reader as ImageReader, ImageError};
+use image::{io::Reader as ImageReader, GenericImageView, RgbImage};
 use std::{env, io::{self, ErrorKind}, path::Path, ffi::OsStr, error::Error};
 use cgmath::{Vector3, InnerSpace};
 
 //From source 2013: https://github.com/ValveSoftware/source-sdk-2013/blob/0d8dceea4310fde5706b3ce1c70609d72a38efdf/sp/src/materialsystem/stdshaders/common_fxc.h#L41
 const OO_SQRT_3: f32 = 0.57735025882720947f32;
-static bumpBasisTranspose: [Vector3<f32>; 3] = [
+static BUMP_BASIS_TRANSPOSE: [Vector3<f32>; 3] = [
     Vector3::new( 0.81649661064147949f32, -0.40824833512306213f32, -0.40824833512306213f32 ),
     Vector3::new(  0.0f32, 0.70710676908493042f32, -0.7071068286895752f32 ),
     Vector3::new(  OO_SQRT_3, OO_SQRT_3, OO_SQRT_3 )
@@ -12,13 +12,16 @@ static bumpBasisTranspose: [Vector3<f32>; 3] = [
 
 fn main() {
     let mut args: Vec<String> = env::args().collect();
-
+    
     if args.len() == 1 {
         println!("[ssbump To Normal Converter by rob5300]\nhttps://github.com/rob5300");
         println!("Enter path of file to convert (or pass as launch arg):");
         let mut buffer = String::new();
         let stdin = io::stdin();
-        stdin.read_line(&mut buffer);
+        match stdin.read_line(&mut buffer) {
+            Err(e) => println!("Input not valid"),
+            Ok(_) => (),
+        }
         //Remove trailing new line chars
         if buffer.ends_with('\n') {
             buffer.pop();
@@ -41,7 +44,8 @@ fn main() {
 
     for x in 1..args.len() {
         let arg = &args[x];
-        match ConvertImage(&arg) {
+        println!("Starting conversion of '{}'...", arg);
+        match convert_image(&arg) {
             Ok(()) => println!("File '{}' converted successfully.", arg),
             Err(e) => println!("Image conversion error for '{}': {}", arg, e)
         }
@@ -55,37 +59,41 @@ fn path_error() -> io::Error
     io::Error::new(ErrorKind::Other, "Path of image was malformed or contained invalid characters")
 }
 
-fn ConvertImage(path: &String) -> Result<(), Box<dyn Error>> {
-    let mut img = ImageReader::open(path)?.decode()?;
+fn convert_image(path: &String) -> Result<(), Box<dyn Error>> {
+    let img = ImageReader::open(path)?.decode()?;
     let width = img.width();
     let height = img.height();
-    let rgb_img = img.as_mut_rgb8().expect("Failed to get rgb image");
+    let pixels = img.pixels();
+    let mut new_image = RgbImage::new(width, height);
 
     //Adjust pixels on image
-    for y in 0..height {
-        for x in 0..width {
-            let pixel = rgb_img.get_pixel_mut(x, y);
-            //Convert pixel colour to a vector
-            let pixel_vector = Vector3::new(pixel[0] as f32 / 255f32, pixel[1] as f32 / 255f32, pixel[2] as f32 / 255f32);
-            //Convert normal vector back to traditional tangent normal
-            pixel[0] = ConvertVector(&pixel_vector, 0);
-            pixel[1] = ConvertVector(&pixel_vector, 1);
-            pixel[2] = ConvertVector(&pixel_vector, 2);
-        }
+    for pixel in pixels {
+        //Convert pixel colour to a vector
+        let rgb = pixel.2;
+        let pixel_vector = Vector3::new(rgb[0] as f32 / 255f32, rgb[1] as f32 / 255f32, rgb[2] as f32 / 255f32);
+        //Convert normal vector back to traditional tangent normal
+        let new_rgb = new_image.get_pixel_mut(pixel.0, pixel.1);
+        new_rgb[0] = convert_vector(&pixel_vector, 0);
+        new_rgb[1] = convert_vector(&pixel_vector, 1);
+        new_rgb[2] = convert_vector(&pixel_vector, 2);
     }
 
-    let originalPath = Path::new(path);
+    let original_path = Path::new(path);
     //Add _normal into filename
-    let mut newFilePath = originalPath.to_owned();
-    let oldName = originalPath.file_stem().ok_or_else(path_error)?.to_str().ok_or_else(path_error)?;
-    let oldExt = originalPath.extension().ok_or_else(path_error)?.to_str().ok_or_else(path_error)?;
-    let newFileName = [oldName, "_normal.", oldExt].concat();
-    newFilePath.set_file_name(OsStr::new(&newFileName));
-    img.save(&newFilePath)?;
-    println!("Wrote new file to '{}'.", newFilePath.to_str().ok_or_else(path_error)?);
+    let mut new_file_path = original_path.to_owned();
+    let old_name = original_path.file_stem().ok_or_else(path_error)?.to_str().ok_or_else(path_error)?;
+    let new_file_name = [old_name, "_normal.", "png"].concat();
+    new_file_path.set_file_name(OsStr::new(&new_file_name));
+
+    //Save new image to disk
+    if new_file_path.exists() {
+        println!("Overriding existing image...");
+    }
+    new_image.save_with_format(&new_file_path, image::ImageFormat::Png)?;
+    println!("Wrote converted normal map to '{}'.", new_file_path.to_str().ok_or_else(path_error)?);
     Ok(())
 }
 
-fn ConvertVector(pixel: &Vector3<f32>, index: usize) -> u8 {
-    return (((pixel.dot(bumpBasisTranspose[index]) * 0.5f32) + 0.5f32) * 255f32) as u8;
+fn convert_vector(pixel: &Vector3<f32>, index: usize) -> u8 {
+    return (((pixel.dot(BUMP_BASIS_TRANSPOSE[index]) * 0.5f32) + 0.5f32) * 255f32) as u8;
 }
