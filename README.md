@@ -1,6 +1,8 @@
 # ssbumpToNormal
 Converts Source engine ssbump normal maps into modern normal maps (tangent space normal maps). Useful to make an old ss bump img usable in source 2 or another engine.
 
+Accepts most image formats (not vtf ,so convert via VTFEdit/VTFCmd first). Exports PNG.
+
 Written in Rust for cross platform use.
 
 ## How to use
